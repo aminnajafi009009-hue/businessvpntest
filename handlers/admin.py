@@ -6927,6 +6927,11 @@ async def admin_miniapp_open_handler(callback: types.CallbackQuery):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
     from bot_info import BOT_WEBAPP_BASE_URL
     webapp_url = f"{BOT_WEBAPP_BASE_URL}/admin-panel"
+    if not webapp_url.startswith(("https://", "http://")):
+        logger.error("Admin Mini App URL is invalid: %s", webapp_url)
+        await callback.answer("❌ آدرس Mini App تنظیم نشده است.", show_alert=True)
+        return
+    logger.info("Opening admin Mini App: %s", webapp_url)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🖥 باز کردن پنل ادمین", web_app=WebAppInfo(url=webapp_url))],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_back")]
