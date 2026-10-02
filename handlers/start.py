@@ -7,6 +7,7 @@ handlers/start.py
 """
 
 import logging
+import asyncio
 
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandObject
@@ -55,16 +56,33 @@ async def _delete_saved_start_menu(bot, chat_id: int, state: FSMContext):
 
 
 async def check_membership(bot, user_id: int) -> list:
-    not_joined = []
-    for ch in bot_info.get_required_channels():
+    """بررسی عضویت کانال‌های اجباری بدون گیرکردن /start.
+
+    هر درخواست Telegram حداکثر 5 ثانیه فرصت دارد؛ کانال خراب/دردسترس‌نباشد
+    همچنان به‌عنوان عضو‌نشده برگردانده می‌شود تا رفتار قبلی حفظ شود، ولی
+    یک کانال معیوب کل /start را برای همیشه معطل نمی‌کند.
+    """
+    channels = bot_info.get_required_channels()
+
+    async def check_one(ch):
         try:
-            member = await bot.get_chat_member(ch["id"], user_id)
+            member = await asyncio.wait_for(
+                bot.get_chat_member(ch["id"], user_id),
+                timeout=5.0,
+            )
             if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED):
-                not_joined.append(ch)
+                return ch
+        except asyncio.TimeoutError:
+            logger.error("check_membership timeout for channel %s", ch.get("id"))
+            return ch
         except Exception as e:
             logger.error(f"check_membership failed for channel {ch['id']}: {e}")
-            not_joined.append(ch)
-    return not_joined
+            return ch
+        return None
+
+    # همه کانال‌ها همزمان بررسی شوند تا /start به تعداد کانال‌ها کند نشود.
+    results = await asyncio.gather(*(check_one(ch) for ch in channels))
+    return [ch for ch in results if ch is not None]
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +296,12 @@ def _is_admin(user_id: int) -> bool:
 @router.message(Command("start"))
 async def start(message: types.Message, command: CommandObject, state: FSMContext):
     user_id = message.from_user.id
-    not_joined = await check_membership(message.bot, user_id)
+
+    # ادمین اصلی و ساب‌ادمین‌ها نباید پشت عضویت اجباری کانال‌ها گیر کنند.
+    # این دقیقاً همان چیزی است که باعث می‌شد /admin کار کند ولی /start منتظر
+    # get_chat_member بماند.
+    is_admin = _is_admin(user_id)
+    not_joined = [] if is_admin else await check_membership(message.bot, user_id)
 
     referrer_code, campaign_code = _parse_start_param(command.args)
     # کد دعوت/کمپین را تا زمان تأیید عضویت کاربر در کانال‌ها نگه می‌داریم تا رسماً
@@ -396,7 +419,7 @@ async def check_join(callback: types.CallbackQuery, state: FSMContext):
         welcome_msg = await show_menu_with_sticker(
             callback.bot, callback.message.chat.id, "start_welcome",
             _welcome_text(callback.from_user.first_name),
-            reply_markup=main_reply_keyboard(message.from_user.id),
+            reply_markup=main_reply_keyboard(callback.from_user.id),
             template_values={"first_name": callback.from_user.first_name},
             ui_key="start_welcome",
         )
@@ -420,7 +443,7 @@ async def go_back(callback: types.CallbackQuery):
         await show_menu_with_sticker(
             callback.bot, callback.message.chat.id, None,
             "👋 بازگشت به منوی اصلی — از منوی پایین صفحه ادامه دهید ✅",
-            reply_markup=main_reply_keyboard(message.from_user.id),
+            reply_markup=main_reply_keyboard(callback.from_user.id),
         )
     await callback.answer()
 
