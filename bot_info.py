@@ -26,7 +26,12 @@ logger = logging.getLogger(__name__)
 _PREFIX = "botinfo_"
 _DEFAULT_SUPPORT_URL = "https://t.me/businesss_support"
 _CHANNELS_KEY = _PREFIX + "required_channels"
-BOT_WEBAPP_BASE_URL = os.environ.get("BOT_WEBAPP_BASE_URL", os.environ.get("MINIAPP_ORIGIN", "")).rstrip("/")
+BOT_WEBAPP_BASE_URL = (
+    os.environ.get("BOT_WEBAPP_BASE_URL")
+    or os.environ.get("MINIAPP_ORIGIN")
+    or os.environ.get("RENDER_EXTERNAL_URL")
+    or "https://angel-vpn.onrender.com"
+).rstrip("/")
 
 # کلید داخلی -> (مقدار پیش‌فرض ثابت یا None برای گرفتن از config.py، برچسب فارسی برای پنل ادمین)
 _FIELDS = {
